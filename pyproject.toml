@@ -6,8 +6,11 @@ readme = "README.md"
 authors = [
     { name = "jakobleander", email = "Jakob.leander@gmail.com" }
 ]
-requires-python = ">=3.13"
-dependencies = []
+requires-python = "==3.11.2"
+dependencies = [
+    "adafruit-circuitpython-bno055>=1.0.0",
+    "rpi-gpio>=0.7.1",
+]
 
 [project.scripts]
 sim2real-robot = "sim2real_robot:main"
