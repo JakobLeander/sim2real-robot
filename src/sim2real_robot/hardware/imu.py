@@ -7,6 +7,7 @@ This module provides an interface to the BNO055 9-DOF IMU sensor via UART.
 import serial
 import time
 import struct
+import threading
 
 
 class IMU:
@@ -15,6 +16,16 @@ class IMU:
     def __init__(self, port="/dev/serial0", baudrate=115200):
         """Initialize the IMU with the given UART port."""
         self.available = False
+        self._thread = None
+        self._running = False
+        
+        # Cached sensor data
+        self.pitch_velocity = 0.0  # Cache for pitch angular velocity
+        self.pitch_angle = 0.0  # Cache for pitch angular velocity
+        
+        # Reading rate tracking
+        self.readings_per_second = 0
+        
         try:
             self.ser = serial.Serial(
                 port=port,
@@ -30,6 +41,53 @@ class IMU:
             print(f"Warning: Could not initialize BNO055 IMU: {e}")
             self.available = False
 
+    # ==================== PUBLIC API ====================
+
+    def start(self):
+        """Start the background thread for continuous sensor reading."""
+        if self._running:
+            print("[WARN] IMU thread already running")
+            return
+        
+        if not self.available:
+            print("[ERR] Cannot start IMU thread: IMU not available")
+            return
+        
+        self._running = True
+        self._thread = threading.Thread(target=self._read_loop, daemon=True)
+        self._thread.start()
+        print("[DBG] IMU reading thread started")
+
+    def stop(self):
+        """Stop the background thread."""
+        if not self._running:
+            return
+        
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        print("[DBG] IMU reading thread stopped")
+
+    def get_calibration_status(self):
+        """Get the calibration status of the IMU."""
+        if not self.available:
+            return None
+
+        try:
+            data = self._read(0x35, 1)
+            if data is not None:
+                calib = data[0]
+                acc = calib & 0x03  # bits 0-1
+                mag = (calib >> 2) & 0x03  # bits 2-3
+                gyr = (calib >> 4) & 0x03  # bits 4-5
+                sys = (calib >> 6) & 0x03  # bits 6-7
+                return acc, mag, gyr, sys
+        except Exception as e:
+            print(f"Warning: Could not read calibration status from IMU: {e}")
+        return None
+
+    # ==================== PRIVATE IMPLEMENTATION ====================
+
     def _write(self, reg, value):
         """Write a register to the BNO055."""
         if not self.available:
@@ -37,20 +95,20 @@ class IMU:
         packet = bytes([0xAA, 0x00, reg, 0x01, value])
         self.ser.write(packet)
         self.ser.flush()
-        time.sleep(0.002)
 
     def _read(self, reg, length):
         """Read registers from the BNO055."""
         if not self.available:
             return None
         self.ser.write(bytes([0xAA, 0x01, reg, length]))
-        self.ser.flush()
+
         time.sleep(0.002)
 
         header = self.ser.read(2)
 
         if len(header) != 2 or header[0] != 0xBB:
-            print("[ERR]   Invalid header")
+            # means we failed to get value, this happens frequently in bno055
+            # if this happens we will return old values, which is better than crashing the program
             return None
 
         reported_length = header[1]
@@ -73,94 +131,63 @@ class IMU:
 
         # Setting power mode NORMAL
         self._write(0x3E, 0x00)
+        time.sleep(0.02)
 
         # Clearing SYS_TRIGGER
         self._write(0x3F, 0x00)
+        time.sleep(0.02)
 
         #Selecting PAGE 0
         self._write(0x07, 0x00)
+        time.sleep(0.02)
 
         # Apply remap
         self._write(0x41, 0x06)   # X=Z, Y=Y, Z=X
+        time.sleep(0.02)
         self._write(0x42, 0x02)   # Flip Y
+        time.sleep(0.02)
 
         # Switching to NDOF mode
         self._write(0x3D, 0x0C)
         time.sleep(1.0)
 
-    def get_euler(self):
-        """Get the current Euler angles (heading, roll, pitch) from the IMU in degrees."""
-        if not self.available:
-            return None
+    def _read_loop(self):
+        """Background thread that continuously reads sensor data."""
+        read_count = 0
+        current_time = time.time()
+        last_rate_time = current_time
+        elapsed = 0.0
+        time_between_reads = 0.01  # Target 100 Hz update rate
 
-        try:
-            data = self._read(0x1A, 6)
-            if data is not None:
-                heading, roll, pitch = struct.unpack("<hhh", data)
-                scale = 1.0 / 16.0
-                return heading * scale, roll * scale, pitch * scale
-        except Exception as e:
-            print(f"Warning: Could not read Euler angles from IMU: {e}")
-        return None
+        while self._running:
+            try:
+                current_read_begin = time.time()    
+                # read data in one operation to make it go faster
+                data = self._read(0x16, 8)
+                if data is not None:
+                    gyr_y_raw = struct.unpack_from("<h", data, 0)[0]
+                    pitch_raw = struct.unpack_from("<h", data, 6)[0]
+                    self.pitch_angle = pitch_raw / 16.0
+                    self.pitch_velocity = gyr_y_raw / 16.0
+                
+                # Track reading rate
+                read_count += 1
+                current_time = time.time()
+                elapsed = current_time - last_rate_time
+                if elapsed >= 1.0:
+                    self.readings_per_second = read_count / elapsed
+                    read_count = 0
+                    last_rate_time = current_time
+                current_read_end = time.time()    
+                current_read_duration = current_read_end - current_read_begin
+                sleep_time = time_between_reads - current_read_duration
+                if sleep_time < 0:
+                    sleep_time = 0
 
-    def get_pitch_angle(self):
-        """Get the current pitch angle from the IMU."""
-        if not self.available:
-            return 0.0
-
-        try:
-            euler = self.get_euler()
-            if euler is not None:
-                return euler[1]  # euler[1] corresponds to pitch
-        except Exception as e:
-            print(f"Warning: Could not read pitch angle from IMU: {e}")
-        return 0.0
-
-    def get_angular_velocity(self):
-        """Get the current angular velocity (gyroscope data) from the IMU in deg/s."""
-        if not self.available:
-            return None
-
-        try:
-            data = self._read(0x14, 6)
-            if data is not None:
-                gyr_x, gyr_y, gyr_z = struct.unpack("<hhh", data)
-                scale = 1.0 / 16.0  # BNO055 gyroscope scale factor
-                return gyr_x * scale, gyr_y * scale, gyr_z * scale
-        except Exception as e:
-            print(f"Warning: Could not read angular velocity from IMU: {e}")
-        return None
-
-    def get_pitch_angular_velocity(self):
-        """Get the current pitch angular velocity from the IMU in deg/s."""
-        if not self.available:
-            return 0.0
-
-        try:
-            angular_velocity = self.get_angular_velocity()
-            if angular_velocity is not None:
-                return angular_velocity[1]  # gyr_x corresponds to pitch rate
-        except Exception as e:
-            print(f"Warning: Could not read pitch angular velocity from IMU: {e}")
-        return 0.0
-
-    def get_calibration_status(self):
-        """Get the calibration status of the IMU."""
-        if not self.available:
-            return None
-
-        try:
-            data = self._read(0x35, 1)
-            if data is not None:
-                calib = data[0]
-                acc = calib & 0x03  # bits 0-1
-                mag = (calib >> 2) & 0x03  # bits 2-3
-                gyr = (calib >> 4) & 0x03  # bits 4-5
-                sys = (calib >> 6) & 0x03  # bits 6-7
-                return acc, mag, gyr, sys
-        except Exception as e:
-            print(f"Warning: Could not read calibration status from IMU: {e}")
-        return None
+                time.sleep(sleep_time)  # 100 Hz update rate
+            except Exception as e:
+                print(f"[ERR] Error in IMU read loop: {e}")
+                time.sleep(0.001)
 
 
 if __name__ == "__main__":
@@ -179,17 +206,19 @@ if __name__ == "__main__":
     else:
         print("[ERR] Failed to read calibration status")
 
+    # Start the background reading thread
+    imu.start()
+
     # Main loop: read and print Euler angles and angular velocity
-    print("[DBG] Starting Euler and angular velocity read loop...")
+    print("[DBG] Starting main read loop...")
     try:
         while True:
-            pitch = imu.get_pitch_angle()
-            pitch_angular_velocity = imu.get_pitch_angular_velocity()
-            if pitch is not None and pitch_angular_velocity is not None:
-                print(f"Pitch: Angle={pitch:+07.2f}°, AngularVel={pitch_angular_velocity:+07.2f}°/s")
-            else:
-                print("[ERR] Failed to read pitch data")
+            pitch = imu.pitch_angle
+            pitch_angular_velocity = imu.pitch_velocity
+            readings_per_second = imu.readings_per_second
+            print(f"Pitch: Angle={pitch:+07.2f}°, AngularVel={pitch_angular_velocity:+07.2f}°/s, Rate={readings_per_second:.1f} Hz")
             time.sleep(0.1)
     except KeyboardInterrupt:
         print("\n[DBG] Exiting...")
+        imu.stop()
 
