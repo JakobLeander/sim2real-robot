@@ -20,6 +20,16 @@ wheels = [
 ]
 
 [[package]]
+name = "adafruit-bno055"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "adafruit-gpio" },
+    { name = "pyserial" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/e8/d5e7a5d7bcea65957b862d419c3ab31aa7fd5c92af8b7dff62cc9067d1f1/Adafruit_BNO055-1.0.2.tar.gz", hash = "sha256:6a3848cda6a0a28f6b07f8c4ccae76f521d0d66d82e58971584947edc4bcf96d", size = 9284, upload-time = "2016-10-20T02:45:56.927Z" }
+
+[[package]]
 name = "adafruit-circuitpython-bno055"
 version = "5.4.22"
 source = { registry = "https://pypi.org/simple" }
@@ -102,6 +112,16 @@ wheels = [
 ]
 
 [[package]]
+name = "adafruit-gpio"
+version = "1.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "adafruit-pureio" },
+    { name = "spidev" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/1c/2dc8a674514219f287fa344e44cadfd77b3e2878d6ff602a8c2149b50dd8/Adafruit_GPIO-1.0.3.tar.gz", hash = "sha256:d6465b92c866c51ca8f3bc1e8f2ec36f5ccdb46d0fd54101c1109756d4a2dcd0", size = 24522, upload-time = "2017-06-06T18:44:52.234Z" }
+
+[[package]]
 name = "adafruit-platformdetect"
 version = "3.88.0"
 source = { registry = "https://pypi.org/simple" }
@@ -172,15 +192,23 @@ name = "sim2real-robot"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "adafruit-bno055" },
     { name = "adafruit-circuitpython-bno055" },
     { name = "rpi-gpio" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "adafruit-bno055" },
     { name = "adafruit-circuitpython-bno055", specifier = ">=1.0.0" },
     { name = "rpi-gpio", specifier = ">=0.7.1" },
 ]
+
+[[package]]
+name = "spidev"
+version = "3.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/87/039b6eeea781598015b538691bc174cc0bf77df9d4d2d3b8bf9245c0de8c/spidev-3.8.tar.gz", hash = "sha256:2bc02fb8c6312d519ebf1f4331067427c0921d3f77b8bcaf05189a2e8b8382c0", size = 13893, upload-time = "2025-09-15T18:56:20.672Z" }
 
 [[package]]
 name = "sysv-ipc"

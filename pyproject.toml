@@ -10,6 +10,7 @@ requires-python = "==3.11.2"
 dependencies = [
     "adafruit-circuitpython-bno055>=1.0.0",
     "rpi-gpio>=0.7.1",
+    "Adafruit_BNO055",
 ]
 
 [project.scripts]
