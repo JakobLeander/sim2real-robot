@@ -7,6 +7,7 @@ in simulation and real-world environments.
 """
 
 from abc import ABC, abstractmethod
+from turtle import forward
 
 
 class RobotControl(ABC):
@@ -26,5 +27,21 @@ class RobotControl(ABC):
         Returns:
             float: The pitch angle in radians, where positive values indicate
                    forward tilt and negative values indicate backward tilt.
+        """
+        pass
+
+    @abstractmethod
+    def start_robot(self):
+        """
+        Start the robot.
+        This method initializes the robot and prepares it for operation.
+        """
+        pass
+
+        @abstractmethod
+    def stop_robot(self):
+        """
+        Stop the robot.
+        This method shuts down the robot and releases any resources it is using.
         """
         pass

@@ -2,6 +2,7 @@
 IMU (Inertial Measurement Unit) interface for BNO055 sensor.
 
 This module provides an interface to the BNO055 9-DOF IMU sensor via UART.
+Tested with Fermion BNO055 IMU from DFRobot.
 """
 
 import serial
