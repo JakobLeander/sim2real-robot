@@ -27,11 +27,12 @@ MAX_SPEED = 20.0
 class StepperMotor:
     """Stepper Motor class to interface with the stepper motor."""
 
-    def __init__(self, step_pin, dir_pin, enable_pin):
+    def __init__(self, step_pin: int, dir_pin:int, enable_pin: int, reverse_direction: bool = False):
         """Initialize the Stepper Motor with the given GPIO pins."""
         self._step_pin = step_pin
         self._dir_pin = dir_pin
         self._enable_pin = enable_pin
+        self._reverse_direction = reverse_direction
 
         self._thread = None
         self._running = False
@@ -87,7 +88,10 @@ class StepperMotor:
         else:
             self._direction = 1
        
-        GPIO.output(self._dir_pin, GPIO.HIGH if self._direction == 1 else GPIO.LOW)
+        if self._reverse_direction:
+            GPIO.output(self._dir_pin, GPIO.HIGH if self._direction == -1 else GPIO.LOW)
+        else:
+            GPIO.output(self._dir_pin, GPIO.HIGH if self._direction == 1 else GPIO.LOW)
 
         if clamped_speed > 0:
             step_frequency = clamped_speed / RAD_PER_STEP  # steps per second
@@ -113,6 +117,7 @@ class StepperMotor:
                 next_step += 2 * self._step_delay  # Schedule next step
 
             # Sleep a bit to avoid busy waiting, but not too long to maintain responsiveness
+            # this approach is better than sleeping for the entire step delay since very slow speed could cause long delays preventing timely response to speed changes or stop command
             time.sleep(0.001)
 
 def main():

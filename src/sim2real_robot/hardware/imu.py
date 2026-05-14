@@ -103,10 +103,9 @@ class IMU:
             return None
         self.ser.write(bytes([0xAA, 0x01, reg, length]))
 
-        time.sleep(0.002)
+        time.sleep(0.005)
 
         header = self.ser.read(2)
-
         if len(header) != 2 or header[0] != 0xBB:
             # means we failed to get value, this happens frequently in bno055
             # if this happens we will return old values, which is better than crashing the program
@@ -126,8 +125,16 @@ class IMU:
 
     def _initialize(self):
         """Initialize the BNO055 sensor in NDOF mode."""
+        # Soft reset
+        self._write(0x3F, 0x20)
+        time.sleep(0.65)  # allow reboot
+        
         # Switching to CONFIGMODE
         self._write(0x3D, 0x00)
+        time.sleep(0.02)
+
+        #Selecting PAGE 0
+        self._write(0x07, 0x00)
         time.sleep(0.02)
 
         # Setting power mode NORMAL
@@ -138,9 +145,6 @@ class IMU:
         self._write(0x3F, 0x00)
         time.sleep(0.02)
 
-        #Selecting PAGE 0
-        self._write(0x07, 0x00)
-        time.sleep(0.02)
 
         # Apply remap
         self._write(0x41, 0x06)   # X=Z, Y=Y, Z=X
@@ -179,6 +183,7 @@ class IMU:
                     self.readings_per_second = read_count / elapsed
                     read_count = 0
                     last_rate_time = current_time
+                
                 current_read_end = time.time()    
                 current_read_duration = current_read_end - current_read_begin
                 sleep_time = time_between_reads - current_read_duration
@@ -217,7 +222,7 @@ if __name__ == "__main__":
             pitch = imu.pitch_angle
             pitch_angular_velocity = imu.pitch_velocity
             readings_per_second = imu.readings_per_second
-            print(f"Pitch: Angle={pitch:+07.2f}°, AngularVel={pitch_angular_velocity:+07.2f}°/s, Rate={readings_per_second:.1f} Hz")
+            print(f"Pitch: Angle={pitch:.2f}°, AngularVel={pitch_angular_velocity:.2f}°/s, Rate={readings_per_second:.1f} Hz")
             time.sleep(0.1)
     except KeyboardInterrupt:
         print("\n[DBG] Exiting...")

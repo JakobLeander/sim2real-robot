@@ -7,8 +7,6 @@ in simulation and real-world environments.
 """
 
 from abc import ABC, abstractmethod
-from turtle import forward
-
 
 class RobotControl(ABC):
     """
@@ -38,7 +36,7 @@ class RobotControl(ABC):
         """
         pass
 
-        @abstractmethod
+    @abstractmethod
     def stop_robot(self):
         """
         Stop the robot.

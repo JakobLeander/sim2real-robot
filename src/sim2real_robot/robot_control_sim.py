@@ -13,5 +13,3 @@ class RobotControlSim(RobotControl):
     def stop_robot(self):
         print("Stopping robot in simulation...")
 
-
-    
