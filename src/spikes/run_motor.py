@@ -10,9 +10,11 @@ The step pin is connected to GPIO 20 as requested.
 import RPi.GPIO as GPIO
 import time
 import sys
+import pigpio
 
 # Pin definitions
-STEP_PIN = 20      # GPIO 20 - Step signal (user requested)
+STEP_PIN = 12      # GPIO 12 - Step signal (user requested)
+ENABLE_PIN = 21
 
 # Motor parameters
 DEGREES_PER_STEP = 1.8/4       # Degrees per step for a typical 200 steps/rev motor with microstepping 1/4
@@ -22,7 +24,7 @@ class StepperMotor:
     Class to control a stepper motor via GPIO pins.
     """
 
-    def __init__(self, step_pin=STEP_PIN):
+    def __init__(self, step_pin=STEP_PIN, enable_pin=ENABLE_PIN):
         """
         Initialize the stepper motor controller.
 
@@ -32,15 +34,17 @@ class StepperMotor:
             enable_pin (int): GPIO pin for enable signal (active low)
         """
         self.step_pin = step_pin
-        
+        self._enable_pin = enable_pin
         # Setup GPIO
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(self.step_pin, GPIO.OUT)
+        GPIO.setup(self._enable_pin, GPIO.OUT)
         
         # Initialize pins
         GPIO.output(self.step_pin, GPIO.LOW)
+        GPIO.output(self._enable_pin, GPIO.LOW)  # Enable pin is active low
         
-        print(f"Stepper motor initialized on pins: STEP={step_pin}")
+        print(f"Stepper motor initialized on pins: STEP={step_pin}, ENABLE={enable_pin}")
     
     def step(self, steps, delay):
         """
@@ -62,6 +66,8 @@ class StepperMotor:
         print(f"Moved {steps} steps )")
    
     def cleanup(self):
+        GPIO.output(self._enable_pin, GPIO.HIGH)  # Enable pin is active low
+
         """Clean up GPIO pins."""
         GPIO.cleanup()
         print("GPIO cleanup completed")
@@ -87,7 +93,7 @@ def main():
 
         # Test basic stepping
         print("\nTesting clockwise rotation...")
-        motor.step(100000, step_delay)
+        motor.step(500, step_delay)
 
         time.sleep(1)
 

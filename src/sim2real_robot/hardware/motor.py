@@ -3,6 +3,9 @@ Stepper Motor interface for controlling a stepper motor.
 
 This module provides an interface to control a stepper motor via UART.
 # Tested with motor SM-42BYG011-25 from Mercury using a DRV8825 stepper driver.
+# The pigpio daemon must be running
+# sudo pigpiod
+
 """
 
 import serial
@@ -13,12 +16,10 @@ import RPi.GPIO as GPIO
 import time
 import sys
 import math
+import pigpio
 
-from spikes.run_motor import DEGREES_PER_STEP
-
-# Degrees per step for motor is 1.8 degree
-# With microstepping 1/4 this is the RAD value
-RAD_PER_STEP = 0.00785
+# Degrees per step for motor is 1.8 degree. No Microstepping
+RAD_PER_STEP = 1.8 * math.pi / 180/4  # 4 microsteps per step (1/4 microstepping)
 
 # Max speed in rad/second
 MAX_SPEED = 20.0
@@ -34,106 +35,73 @@ class StepperMotor:
         self._enable_pin = enable_pin
         self._reverse_direction = reverse_direction
 
-        self._thread = None
-        self._running = False
-        
-        # setup GPIO
+        self.pi = pigpio.pi()
+        if not self.pi.connected:
+            raise RuntimeError("pigpio daemon not running")
+
+        #setup pins
         GPIO.setmode(GPIO.BCM)
-        GPIO.setup(self._step_pin, GPIO.OUT)
         GPIO.setup(self._dir_pin, GPIO.OUT)
         GPIO.setup(self._enable_pin, GPIO.OUT)
+        self.pi.set_mode(self._step_pin, pigpio.OUTPUT)
         
-        # Initialize pins
-        GPIO.output(self._step_pin, GPIO.LOW)
-        GPIO.output(self._dir_pin, GPIO.LOW)
+        # Initialize motor as off
         GPIO.output(self._enable_pin, GPIO.HIGH) #turned off
-        
-        self._direction = 1  # 1 for forward, -1 for backward
-
-        # Delay between steps.
-        # Because each step requires pulling pin high and low, the total step period is 2 * step_delay. So step_delay is half the step period.
-        self._step_delay = 0.0
 
     # ==================== PUBLIC API ====================
 
     def start(self):
         """Start the motor"""
-        if self._running:
-            print("[WARN] IMU thread already running")
-            return
-        
-        self._running = True
         GPIO.output(self._enable_pin, GPIO.LOW)  # Enable the motor
-        self._thread = threading.Thread(target=self._run_motor, daemon=True)
-        self._thread.start()
 
     def stop(self):
         """Stop the motor."""
-        if not self._running:
-            return
-        
         GPIO.output(self._enable_pin, GPIO.HIGH)  # Disable the motor
-        self._running = False
-        if self._thread is not None:
-            self._thread.join(timeout=1.0)
 
     def set_speed(self, speed_rad_per_sec):
-        """Set the motor speed in radians per second."""
-        #clamp speed to max
-        clamped_speed = max(-MAX_SPEED, min(speed_rad_per_sec, MAX_SPEED))
+        # Clamp speed
+        speed = max(-MAX_SPEED, min(speed_rad_per_sec, MAX_SPEED))
 
-        if clamped_speed < 0:
-            self._direction = -1
-            clamped_speed = -clamped_speed
-        else:
-            self._direction = 1
-       
+        # Set direction
+        direction = 1 if speed >= 0 else -1
         if self._reverse_direction:
-            GPIO.output(self._dir_pin, GPIO.HIGH if self._direction == -1 else GPIO.LOW)
-        else:
-            GPIO.output(self._dir_pin, GPIO.HIGH if self._direction == 1 else GPIO.LOW)
+            direction *= -1
 
-        if clamped_speed > 0:
-            step_frequency = clamped_speed / RAD_PER_STEP  # steps per second
-            self._step_delay = 0.5 / step_frequency  # delay for half the step period
-        else:
-            self._step_delay = 0.0
+        self.pi.write(self._dir_pin, 1 if direction > 0 else 0)
 
-    # ==================== PRIVATE IMPLEMENTATION ====================
-    def _run_motor(self):
-        """Background thread that continuously send stepper signals."""
-        next_step = time.perf_counter()
+        # Convert rad/s → steps/s
+        speed = abs(speed)
+        if speed == 0:
+            self.pi.hardware_PWM(self._step_pin, 0, 0)
+            return
 
-        while self._running:
-            now = time.perf_counter()    
+        steps_per_sec = speed / RAD_PER_STEP
 
-            if self._step_delay > 0 and now >= next_step:
-                # Send step pulse - high for step_delay, then low for step_delay
-                GPIO.output(self._step_pin, GPIO.HIGH)
-                time.sleep(self._step_delay)
-                GPIO.output(self._step_pin, GPIO.LOW)
-                time.sleep(self._step_delay)
-
-                next_step += 2 * self._step_delay  # Schedule next step
-
-            # Sleep a bit to avoid busy waiting, but not too long to maintain responsiveness
-            # this approach is better than sleeping for the entire step delay since very slow speed could cause long delays preventing timely response to speed changes or stop command
-            time.sleep(0.001)
+        # pigpio hardware PWM:
+        # frequency = steps per second
+        # dutycycle = 500000 (50%)
+        self.pi.hardware_PWM(self._step_pin, int(steps_per_sec), 500000)
 
 def main():
     """Main function for testing the stepper motor."""
 
-    STEP_PIN = 17
-    DIR_PIN = 27
-    ENABLE_PIN = 22
+    ENABLE_PIN = 21
+    STEP_PIN = 12
+    DIR_PIN = 20
+
+    ENABLE_PIN = 26
+    STEP_PIN = 19
+    DIR_PIN = 13
+    SPEED = math.pi*2  # 1 rotation per second
+    
 
     motor = StepperMotor(STEP_PIN, DIR_PIN, ENABLE_PIN)
 
     motor.start()
-    motor.set_speed(5.0)  # Set speed to 5 rad/s
-    time.sleep(10)
-    motor.set_speed(-5.0)  # Set speed to 5 rad/s
-    time.sleep(10)
+    motor.set_speed(SPEED)  # Set speed to 5 rad/s
+    time.sleep(5)
+    motor.set_speed(-SPEED)  # Set speed to 5 rad/s
+    time.sleep(5)
     motor.stop()
 
 if __name__ == "__main__":
